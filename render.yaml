@@ -1,0 +1,16 @@
+# Render Blueprint: New > Blueprint, pick this repo, done.
+# Free plan sleeps after 15 idle minutes (about a minute to wake). Switch `plan` to `starter` for always-on.
+services:
+  - type: web
+    name: declare
+    runtime: node
+    plan: free
+    region: singapore
+    buildCommand: npm ci --omit=dev
+    startCommand: node server/index.js
+    healthCheckPath: /healthz
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: NODE_VERSION
+        value: "22"

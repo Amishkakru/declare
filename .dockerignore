@@ -1,0 +1,9 @@
+node_modules
+test
+scripts
+*.md
+*.zip
+.git
+.gitignore
+Dockerfile
+render.yaml

@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Declare</title>
+  <meta name="theme-color" content="#1a0b10">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Declare">
+  <meta property="og:description" content="Four cards you cannot see. Keep your total lowest, use the power cards, and declare when you think you have won. Join my table.">
+  <meta name="color-scheme" content="dark">
+  <meta name="description" content="Declare: a 3 or 4 player memory card game with power cards, matching and a single call to end the round.">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='22' fill='%235b1c27'/%3E%3Crect x='20' y='18' width='27' height='36' rx='5' fill='%232b378f' stroke='%234fc7a6' stroke-width='3'/%3E%3Crect x='53' y='18' width='27' height='36' rx='5' fill='%23f3ecda'/%3E%3Crect x='20' y='60' width='27' height='26' rx='5' fill='%232b378f' stroke='%234fc7a6' stroke-width='3'/%3E%3Crect x='53' y='60' width='27' height='26' rx='5' fill='%232b378f' stroke='%234fc7a6' stroke-width='3'/%3E%3C/svg%3E">
+  <link rel="preload" as="font" type="font/woff2" href="/fonts/bodoni-moda.woff2" crossorigin>
+  <link rel="preload" as="font" type="font/woff2" href="/fonts/hanken-grotesk.woff2" crossorigin>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <!-- Suit shapes and the joker star, drawn once and reused everywhere with <use>. -->
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+    <defs>
+      <symbol id="s-S" viewBox="0 0 100 100"><path d="M50 5C50 5 9 38 9 62c0 13 10 21 22 21 7 0 13-3 17-9-1 9-5 16-12 21h28c-7-5-11-12-12-21 4 6 10 9 17 9 12 0 22-8 22-21C91 38 50 5 50 5z"/></symbol>
+      <symbol id="s-H" viewBox="0 0 100 100"><path d="M50 93C22 70 6 53 6 33 6 18 17 8 30 8c9 0 16 5 20 13 4-8 11-13 20-13 13 0 24 10 24 25 0 20-16 37-44 60z"/></symbol>
+      <symbol id="s-C" viewBox="0 0 100 100"><path d="M50 4a21 21 0 0 0-17 33 22 22 0 1 0 13 39c-1 9-5 16-12 20h32c-7-4-11-11-12-20a22 22 0 1 0 13-39A21 21 0 0 0 50 4z"/></symbol>
+      <symbol id="s-D" viewBox="0 0 100 100"><path d="M50 3C60 22 75 38 92 50 75 62 60 78 50 97 40 78 25 62 8 50 25 38 40 22 50 3z"/></symbol>
+      <symbol id="s-star" viewBox="0 0 100 100"><path d="M50 4 61 37 96 38 68 59 78 93 50 73 22 93 32 59 4 38 39 37z"/></symbol>
+    </defs>
+  </svg>
+
+  <div id="app" data-view="entry">
+    <header class="bar">
+      <a class="wordmark" href="/" aria-label="Declare home">Declare</a>
+      <div class="bar-room" id="barRoom" hidden></div>
+      <div class="bar-round" id="barRound"></div>
+      <div class="bar-actions">
+        <span class="conn" id="conn" hidden>Reconnecting</span>
+        <button class="btn quiet" id="btnRules" type="button">Rules</button>
+        <button class="btn quiet only-narrow" id="btnLedger" type="button">Scores</button>
+      </div>
+    </header>
+
+    <!-- Landing: name, create or join -->
+    <section id="entry" class="entry">
+      <div class="entry-art" id="entryArt" aria-hidden="true"></div>
+      <form class="entry-form" id="entryForm" autocomplete="off">
+        <h1>Declare</h1>
+        <p class="lede">Four cards you cannot see. Keep your total lowest, use the power cards, and call it when you think you have won.</p>
+        <label class="field">
+          <span>Your name</span>
+          <input id="nameInput" name="name" maxlength="16" required placeholder="Meera" autocapitalize="words" spellcheck="false">
+        </label>
+        <div class="entry-actions">
+          <button class="btn primary big" type="submit" id="btnCreate" data-intent="create">Create a table</button>
+        </div>
+        <div class="join-row">
+          <label class="field field-code">
+            <span>Table code</span>
+            <input id="codeInput" name="code" maxlength="4" placeholder="BXQT" autocapitalize="characters" spellcheck="false" inputmode="text">
+          </label>
+          <button class="btn big" type="submit" id="btnJoin" data-intent="join">Join table</button>
+        </div>
+        <p class="form-error" id="entryError" role="alert" hidden></p>
+        <p class="entry-foot">For 3 or 4 players. Empty seats can be filled with bots.</p>
+      </form>
+    </section>
+
+    <main id="stage" class="stage">
+      <div class="table-col">
+        <div id="cloth" class="cloth">
+          <div id="seats" class="seats"></div>
+          <div id="panel" class="panel" hidden></div>
+        </div>
+        <div id="tray" class="tray" aria-live="polite"></div>
+      </div>
+      <aside id="ledger" class="ledger" aria-label="Scores and moves"></aside>
+    </main>
+
+    <dialog id="rules" class="rules"></dialog>
+    <div id="toasts" class="toasts" aria-live="polite"></div>
+  </div>
+
+  <script type="module" src="/js/app.js"></script>
+</body>
+</html>

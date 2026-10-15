@@ -1,0 +1,17 @@
+{
+  "name": "declare",
+  "version": "1.0.0",
+  "description": "Declare - a 3 or 4 player memory card game. Keep your hidden total lowest, use the power cards, and declare when you think you have won.",
+  "type": "module",
+  "private": true,
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "start": "node server/index.js",
+    "dev": "node --watch server/index.js",
+    "test": "node --test",
+    "simulate": "node scripts/simulate.js"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  }
+}
