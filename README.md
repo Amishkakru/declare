@@ -19,6 +19,8 @@ Open http://localhost:3000, create a table and share the four-letter code. Playe
 
 **Cards.** Full deck plus two jokers (54 cards). Joker −1, black king 0, ace 1, 2 to 10 face value, jack, queen and red king 10.
 
+**Opening look.** Cards are dealt in two rows. Before play starts, each player sees their own bottom two cards for 6 seconds.
+
 **Turn.** Start of your turn: draw from the deck, or declare. The discard pile is never drawn from. With the drawn card you either:
 - swap it for one of your cards (the old card goes face up on the pile; its power does not apply), or
 - discard it, and if it is a power card, optionally use the power.
@@ -31,11 +33,11 @@ Open http://localhost:3000, create a table and share the four-letter code. Playe
 | 9, 10 | Look at one card of another player |
 | J | Blind swap one of your cards with another player's |
 | Q | Look at one of your cards, then optionally make a blind swap |
-| K | Look at one of yours and one of another player's, then optionally swap that pair |
+| K | Look at one of yours and one of another player's, then optionally swap any two cards held by two different players (the pair you looked at is pre-selected) |
 
 A look shows the card for three seconds. After that it exists only in the player's memory; the server stops sending it.
 
-**Matching.** Whenever a card lands on the pile, a short window opens (about 3 seconds). Anyone may throw one of their own cards of the same rank. The first correct match stays on the pile and closes the window; only one match per card. A wrong rank goes back to its place, face up to everyone for a moment, and the thrower takes one penalty card from the deck. One try per player per card.
+**Matching.** Whenever a card lands on the pile, a short window opens (about 3 seconds). Anyone may throw a card of the same rank: one of their own, or another player's. The first correct match stays on the pile and closes the window; only one match per card. Matching another player's card means you then give that player one of your cards, which goes into the gap (20-second clock). A wrong rank goes back to its place, face up to everyone for a moment, and the thrower takes one penalty card from the deck. One try per player per card.
 
 **Declaring.** Instant reveal. The declarer wins only with a strictly lower total than everyone else. Otherwise the declarer loses, and every other player on the lowest total wins.
 

@@ -34,13 +34,14 @@ function faceUpNow(G) {
   const now = serverNow();
   const reveal = store.snap.timing?.reveal ?? 3000;
   for (const r of G.reveals) {
-    const left = r.at + reveal - now;
-    if (left > 0) up.set(`${r.owner}:${r.pos}`, { card: r.card, at: r.at, ms: reveal, mine: true });
+    const ms = r.ms ?? reveal;
+    if (r.at + ms - now > 0) up.set(`${r.owner}:${r.pos}`, { card: r.card, at: r.at, ms, mine: true });
   }
   // A wrong match puts the card back face up for the whole table for a moment.
   for (const e of G.log) {
-    if (e.type === 'match' && !e.ok && now - e.at < reveal && G.slots[e.seat]?.[e.pos]) {
-      up.set(`${e.seat}:${e.pos}`, { card: e.card, at: e.at, ms: reveal, mine: false });
+    const owner = e.owner ?? e.seat;
+    if (e.type === 'match' && !e.ok && now - e.at < reveal && G.slots[owner]?.[e.pos]) {
+      up.set(`${owner}:${e.pos}`, { card: e.card, at: e.at, ms: reveal, mine: false });
     }
   }
   // The king's pair stays in view while its player decides.
@@ -70,10 +71,11 @@ function flashesNow(G) {
         put(e.owner, e.opos, `${who(e.seat)} looked`, 'peek');
         break;
       case 'trade':
-        put(e.seat, e.pos, 'Swapped', 'trade');
+        put(e.from ?? e.seat, e.pos, 'Swapped', 'trade');
         put(e.owner, e.opos, 'Swapped', 'trade');
         break;
-      case 'match': if (!e.ok) put(e.seat, e.pos, 'Wrong match', 'wrong'); break;
+      case 'match': if (!e.ok) put(e.owner ?? e.seat, e.pos, `${who(e.seat)}: wrong match`, 'wrong'); break;
+      case 'give': put(e.owner, e.opos, `From ${who(e.seat)}`, 'swap'); break;
       case 'penalty': put(e.seat, e.pos, 'Penalty card', 'wrong'); break;
       default:
     }
@@ -88,7 +90,8 @@ function slotHtml(owner, pos, present, ctx) {
   const flash = ctx.flash.get(key);
   const action = ctx.result ? null : slotAction(owner, pos);
   const picked = (owner === me() && store.ui.own === pos)
-    || (store.ui.other && store.ui.other.owner === owner && store.ui.other.pos === pos);
+    || (store.ui.other && store.ui.other.owner === owner && store.ui.other.pos === pos)
+    || (action === 'pick2' && store.ui.picks?.some((p) => p.owner === owner && p.pos === pos));
   const cls = [
     'slot',
     up ? 'is-up' : '',
@@ -112,12 +115,12 @@ function slotHtml(owner, pos, present, ctx) {
 }
 
 const actionHint = (a) => ({
-  swap: ': put your drawn card here', look: ': look at this card', pick: ': pick this card', match: ': throw this card as a match',
+  swap: ': put your drawn card here', look: ': look at this card', pick: ': pick this card', pick2: ': pick this card to swap', match: ': throw this card as a match', give: ': give this card',
 }[a] ?? '');
 
 function plateHtml(seat, G, snap) {
   const info = seatInfo(seat);
-  const turn = G && !G.result && G.turn === seat && G.phase !== 'match';
+  const turn = G && !G.result && (G.phase === 'give' ? G.give.seat === seat : G.turn === seat && G.phase !== 'match' && G.phase !== 'preview');
   const dl = G?.deadline?.seat === seat ? G.deadline : null;
   const count = G ? G.slots[seat].filter(Boolean).length : 0;
   const total = G?.result ? G.result.totals[seat] : null;
@@ -128,12 +131,11 @@ function plateHtml(seat, G, snap) {
   else if (!info.connected) status.push('Away');
   else if (info.auto) status.push('Autopilot');
   const meta = G?.result
-    ? `<span class="total num">${total < 0 ? '−' : ''}${Math.abs(total)}</span><small>${won ? 'Wins' : ''}${declared ? `${won ? ', ' : ''}declared` : ''}</small>`
-    : `<small>${count} card${count === 1 ? '' : 's'}${snap.scores ? ` · ${snap.scores[seat]} pts` : ''}</small>`;
+    ? `<small><span class="total num">${total < 0 ? '−' : ''}${Math.abs(total)}</span> ${won ? 'Wins' : ''}${declared ? `${won ? ', ' : ''}declared` : ''}</small>`
+    : `<small>${count} card${count === 1 ? '' : 's'}${snap.scores ? `<span class="opt"> · ${snap.scores[seat]} pts</span>` : ''}${status.length ? `<span class="opt"> · ${status.join(' ')}</span>` : ''}</small>`;
   return `<div class="plate ${turn ? 'is-turn' : ''} ${won ? 'is-winner' : ''} ${declared ? 'is-declarer' : ''}">
     <span class="token">${esc(initial(info.name || '?'))}</span>
-    <span class="who"><b>${esc(seat === me() ? `${info.name} (you)` : info.name)}</b>${meta}</span>
-    ${status.length ? `<span class="tag">${status.join(' ')}</span>` : ''}
+    <span class="who"><b>${esc(seat === me() ? 'You' : info.name)}</b>${meta}</span>
     ${dl ? `<i class="clock" style="animation-duration:${dl.ms}ms;animation-delay:${dl.at - dl.ms - serverNow()}ms"></i>` : ''}
   </div>`;
 }
@@ -189,7 +191,7 @@ export function renderTable() {
     G: { ...G, log: G.log.at(-1)?.id },
     up: [...ctx.up.keys()],
     fl: [...ctx.flash.entries()],
-    ui: [store.ui.own, store.ui.other],
+    ui: [store.ui.own, store.ui.other, store.ui.picks],
     seats: snap.seats,
     scores: snap.scores,
     stage: snap.stage,

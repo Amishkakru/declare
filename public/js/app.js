@@ -108,7 +108,8 @@ function announce(G) {
   if (lastLogId >= 0) {
     for (const e of fresh) {
       if (e.type === 'match' && e.seat === me()) {
-        toast(e.ok ? 'Matched. One card fewer.' : 'Wrong rank. A penalty card was added face down.', { kind: e.ok ? 'info' : 'warn' });
+        const others = (e.owner ?? e.seat) !== me();
+        toast(e.ok ? (others ? 'Matched. Now give them one of your cards.' : 'Matched. One card fewer.') : 'Wrong rank. A penalty card was added face down.', { kind: e.ok ? 'info' : 'warn' });
       } else if (e.type === 'reshuffle') {
         toast('The deck ran out. The discard pile was shuffled into a new deck.');
       }

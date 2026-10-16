@@ -8,7 +8,7 @@ const RULES = `
   <section>
     <h3>The aim</h3>
     <p>Hold the lowest total. You never see your own cards unless a power lets you look, so you play from memory.</p>
-    <p>Three or four players, a full deck with two jokers. Everyone is dealt four cards face down.</p>
+    <p>Three or four players, a full deck with two jokers. Everyone is dealt four cards face down, in two rows. Before play starts, each player sees their own bottom two cards for a few seconds.</p>
   </section>
   <section>
     <h3>Card values</h3>
@@ -36,14 +36,14 @@ const RULES = `
       <tr><th>9, 10</th><td>Look at one card of another player</td></tr>
       <tr><th>Jack</th><td>Blind swap one of your cards with another player’s</td></tr>
       <tr><th>Queen</th><td>Look at one of your cards, then you may make a blind swap</td></tr>
-      <tr><th>King</th><td>Look at one of yours and one of another player’s, then you may swap those two</td></tr>
+      <tr><th>King</th><td>Look at one of yours and one of another player’s, then you may swap any two cards held by two different players</td></tr>
     </table>
     <p>Every power is optional. A look shows the card for three seconds only.</p>
   </section>
   <section>
     <h3>Matching</h3>
-    <p>Each time a card lands on the pile, a short window opens. Anyone may throw one of their own cards of the same rank onto it, which leaves them a card lighter. Only the first match counts.</p>
-    <p>Throw a card of the wrong rank and it goes back where it was, face up for a moment for everyone, and you take one penalty card from the deck. One try per player per card.</p>
+    <p>Each time a card lands on the pile, a short window opens. Anyone may throw a card of the same rank onto it: one of their own, which leaves them a card lighter, or another player’s. Match another player’s card and you then give that player one of your cards in its place. Only the first match counts.</p>
+    <p>Throw a card of the wrong rank and it goes back where it was, face up for a moment for everyone, and the thrower takes one penalty card from the deck. One try per player per card.</p>
   </section>
   <section>
     <h3>Declaring</h3>

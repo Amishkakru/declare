@@ -10,7 +10,10 @@ export function playRound({
   players, seed, first = 0, onStep = () => {},
 }) {
   const rng = mulberry32(seed);
-  const round = new Round({ players, first, rng });
+  const round = new Round({
+    players, first, rng, preview: 1,
+  });
+  round.startPlay();
   let guard = 0;
   while (round.phase !== 'done') {
     onStep(round);

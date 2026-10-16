@@ -334,3 +334,72 @@ test('fuzz: 600 bot rounds always finish, stay legal and never leak a hidden car
     r.result.winners.forEach((w) => assert.ok(Number.isInteger(w) && w >= 0 && w < players));
   }
 });
+
+test('opening look: each player sees only their own bottom two cards, then play starts', () => {
+  const r = new Round({
+    players: 3, deck: stacked(H), now: () => 1000, preview: 5000,
+  });
+  assert.equal(r.phase, 'preview');
+  assert.equal(r.draw(0).ok, false, 'nobody acts during the look');
+  const v = r.view(1);
+  assert.deepEqual(v.reveals.map((x) => [x.owner, x.pos, x.card, x.ms]), [[1, 1, '2H', 5000], [1, 3, '4H', 5000]]);
+  assert.ok(r.knows[1].has('2H') && !r.knows[1].has('AH'));
+  assert.ok(!r.knows[0].has('2H'), 'other players do not see them');
+  assert.ok(r.startPlay().ok);
+  assert.equal(r.phase, 'turn');
+  assert.equal(r.startPlay().ok, false);
+});
+
+test('king: after looking, any two cards of two different players can be swapped', () => {
+  const r = make(['KD', 'KH']);
+  r.draw(0);
+  r.discardDrawn(0);
+  r.usePower(0, {
+    t: 'peek', pos: 0, owner: 1, opos: 0,
+  });
+  assert.equal(r.usePower(0, {
+    t: 'swap', owner: 1, pos: 1, owner2: 1, pos2: 2,
+  }).ok, false, 'two cards of the same player is refused');
+  assert.ok(r.usePower(0, {
+    t: 'swap', owner: 1, pos: 2, owner2: 2, pos2: 3,
+  }).ok, 'two opponents may be swapped with each other');
+  assert.equal(r.hands[1][2], '4C');
+  assert.equal(r.hands[2][3], '3H');
+  assert.equal(r.hands[0][0], 'AS', 'the looked cards stay put');
+  r.closeMatch();
+  r.draw(1);
+  r.discardDrawn(1);
+  r.usePower(1, {
+    t: 'peek', pos: 1, owner: 2, opos: 1,
+  });
+  assert.ok(r.usePower(1, { t: 'swap' }).ok, 'no choice swaps the looked pair');
+  assert.equal(r.hands[1][1], '2C');
+});
+
+test('matching another player’s card: it goes to the pile, then the matcher gives them a card', () => {
+  const r = make(['AD']);
+  r.draw(0);
+  r.swapIn(0, 1); // a 2 on top
+  assert.ok(r.matchCard(1, 1, 2).ok); // seat 1 throws seat 2's 2C
+  assert.equal(r.top(), '2C');
+  assert.equal(r.phase, 'give');
+  assert.equal(r.currentActor(), 1);
+  assert.equal(r.matchCard(0, 1).ok, false, 'the window closed');
+  assert.equal(r.giveCard(0, 0).ok, false, 'only the matcher gives');
+  assert.ok(r.giveCard(1, 3).ok);
+  assert.equal(r.hands[2][1], '4H', 'the gift fills the gap');
+  assert.equal(r.hands[1][3], null);
+  assert.equal(r.phase, 'turn');
+  assert.equal(r.turn, 1);
+});
+
+test('a wrong throw of another player’s card costs the thrower a penalty card', () => {
+  const r = make(['5D', '9C']);
+  r.draw(0);
+  r.discardDrawn(0);
+  assert.ok(r.matchCard(1, 0, 2).ok); // AC on a 5
+  assert.equal(r.hands[2][0], 'AC', 'the card goes back');
+  assert.equal(r.hands[1].length, 5);
+  assert.equal(r.hands[1][4], '9C');
+  assert.equal(r.phase, 'match');
+});

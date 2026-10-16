@@ -22,6 +22,12 @@ export function syncPicks() {
     store.ui.pickKey = key;
     store.ui.own = null;
     store.ui.other = null;
+    store.ui.picks = [];
+    // King, second step: start from the pair just seen, so one press swaps them; any two cards can be chosen instead.
+    const P = G?.power;
+    if (P?.kind === 'king' && P.step === 2 && P.pick && G.turn === me()) {
+      store.ui.picks = [{ owner: me(), pos: P.pick.pos }, { owner: P.pick.owner, pos: P.pick.opos }];
+    }
   }
 }
 
@@ -30,7 +36,8 @@ export function slotAction(owner, pos) {
   const G = game();
   if (!G || store.snap.stage !== 'round' || !G.slots[owner]?.[pos]) return null;
   const mine = owner === me();
-  if (G.phase === 'match') return mine && !G.match.tried.includes(me()) ? 'match' : null;
+  if (G.phase === 'match') return G.match.tried.includes(me()) ? null : 'match';
+  if (G.phase === 'give') return G.give.seat === me() && mine ? 'give' : null;
   if (G.turn !== me()) return null;
   if (G.phase === 'decide') return mine ? 'swap' : null;
   if (G.phase !== 'power') return null;
@@ -40,7 +47,7 @@ export function slotAction(owner, pos) {
     case 'peekOther': return mine ? null : 'look';
     case 'blindSwap': return 'pick';
     case 'queen': return P.step === 1 ? (mine ? 'look' : null) : 'pick';
-    case 'king': return P.step === 1 ? 'pick' : null;
+    case 'king': return P.step === 1 ? 'pick' : 'pick2';
     default: return null;
   }
 }
@@ -49,7 +56,20 @@ export function onSlot(owner, pos) {
   const action = slotAction(owner, pos);
   if (!action) return;
   const ui = store.ui;
-  if (action === 'match') { act({ t: 'match', pos }); return; }
+  if (action === 'match') { act({ t: 'match', pos, owner }); return; }
+  if (action === 'give') { act({ t: 'give', pos }); return; }
+  if (action === 'pick2') {
+    const same = (p) => p.owner === owner && p.pos === pos;
+    let picks = ui.picks ?? [];
+    if (picks.some(same)) picks = picks.filter((p) => !same(p));
+    else {
+      picks = picks.filter((p) => p.owner !== owner); // two different players
+      picks = [...picks, { owner, pos }].slice(-2);
+    }
+    ui.picks = picks;
+    render();
+    return;
+  }
   if (action === 'swap') {
     if (ui.own === pos) act({ t: 'swap', pos });
     else ui.own = pos;
@@ -92,7 +112,15 @@ function onClick(e) {
         });
       }
       break;
-    case 'kingSwap': act({ t: 'power', a: 'swap' }); break;
+    case 'kingSwap': {
+      const [a, b] = ui.picks ?? [];
+      if (a && b) {
+        act({
+          t: 'power', a: 'swap', owner: a.owner, pos: a.pos, owner2: b.owner, pos2: b.pos,
+        });
+      }
+      break;
+    }
     case 'resume': act({ t: 'resume' }); break;
     case 'next': act({ t: 'next' }); break;
     default:
@@ -166,10 +194,16 @@ function myTurn(G) {
             buttons: btn('Look at both', 'kingLook', { primary: true, disabled: !both }) + skip,
           };
         }
-        return {
-          text: `Your ${mini(P.pick.cards[0])} against ${name(P.pick.owner)}’s ${mini(P.pick.cards[1])}. Swap the pair, or keep them where they are.`,
-          buttons: btn('Swap them', 'kingSwap', { primary: true }) + btn('Keep', 'skip', { cls: 'quiet' }),
-        };
+        {
+          const picks = ui.picks ?? [];
+          const ready = picks.length === 2;
+          const whose = (p) => (p.owner === me() ? 'your' : `${name(p.owner)}’s`);
+          const chosen = ready ? `Swapping ${whose(picks[0])} card ${picks[0].pos + 1} with ${whose(picks[1])} card ${picks[1].pos + 1}.` : 'Pick two cards held by two different players.';
+          return {
+            text: `You saw your ${mini(P.pick.cards[0])} and ${name(P.pick.owner)}’s ${mini(P.pick.cards[1])}. You may swap any two cards on the table. ${chosen}`,
+            buttons: btn('Swap', 'kingSwap', { primary: true, disabled: !ready }) + btn('No swap', 'skip', { cls: 'quiet' }),
+          };
+        }
       default:
     }
   }
@@ -189,11 +223,26 @@ function theirTurn(G) {
 
 function matchTray(G) {
   const tried = G.match.tried.includes(me());
-  const count = G.slots[me()].filter(Boolean).length;
   if (tried) return { text: `You have thrown for this ${mini(G.match.top)}. Waiting for the window to close.` };
-  if (!count) return { text: `Matching window for ${mini(G.match.top)}.` };
   return {
-    text: `Match the ${mini(G.match.top)}: tap one of your cards of the same rank to throw it. A wrong card brings a penalty card.`,
+    text: `Match the ${mini(G.match.top)}: tap any card of the same rank, yours or another player’s. Match someone else’s and you give them one of your cards. A wrong card brings you a penalty card.`,
+    tone: 'match',
+  };
+}
+
+function giveTray(G) {
+  const { seat, owner } = G.give;
+  if (seat === me()) {
+    return { text: `You matched ${name(owner)}’s card. Tap one of your cards to give to ${name(owner)}.`, tone: 'match' };
+  }
+  const to = owner === me() ? 'you' : name(owner);
+  return { text: `${name(seat)} matched ${owner === me() ? 'your' : `${name(owner)}’s`} card and is choosing a card to give ${to}.` };
+}
+
+function previewTray(G) {
+  const left = G.deadline?.kind === 'preview' ? Math.max(0, Math.ceil((G.deadline.at - serverNow()) / 1000)) : 0;
+  return {
+    text: `Memorise your bottom two cards. Everyone is looking at their own. Play starts in <b class="num">${left}</b>.`,
     tone: 'match',
   };
 }
@@ -207,7 +256,9 @@ export function renderTray() {
     const you = snap.seats[me()];
     if (you.auto && you.connected) {
       model = { text: 'You were put on autopilot after missing your turn twice.', buttons: btn('I’m back', 'resume', { primary: true }) };
-    } else if (G.phase === 'match') model = matchTray(G);
+    } else if (G.phase === 'preview') model = previewTray(G);
+    else if (G.phase === 'match') model = matchTray(G);
+    else if (G.phase === 'give') model = giveTray(G);
     else if (G.turn === me()) model = myTurn(G);
     else model = theirTurn(G);
   }

@@ -3,10 +3,13 @@
 // this module what is legal. Every method returns { ok: true } or { ok: false, error }.
 //
 // A round, in phases:
+//   preview everyone looks at their own bottom two cards; nobody can act
 //   turn    the player to act either declares or draws from the deck
 //   decide  they hold the drawn card: swap it into one of their slots, or discard it
 //   power   the discarded card has a power, and they are using it (or skipping it)
-//   match   the discard pile has a new top card; anyone may throw down one card of the same rank
+//   match   the discard pile has a new top card; anyone may throw down one card of the same rank,
+//           their own or another player's
+//   give    a player matched someone else's card and now hands that player one of their own cards
 //   done    someone declared; every card is face up and the round is scored
 
 import {
@@ -16,7 +19,9 @@ import {
 export const MIN_PLAYERS = 3;
 export const MAX_PLAYERS = 4;
 export const HAND_SIZE = 4;
-export const MAX_TURNS = 150; // a safety net only: a round this long ends with a reveal and no declarer
+export const MAX_TURNS = 150;
+/** The bottom row of a hand. Hands are laid out in two rows, filled column by column. */
+export const BOTTOM = [1, 3]; // a safety net only: a round this long ends with a reveal and no declarer
 
 const ok = { ok: true };
 const fail = (error) => ({ ok: false, error });
@@ -29,8 +34,11 @@ export class Round {
    * @param {() => number} [o.rng]
    * @param {() => number} [o.now] clock used to stamp private looks, so the server can expire them
    * @param {string[]} [o.deck] a fixed deck order for tests (top of the deck is the end of the array)
+   * @param {number} [o.preview] if set, start with everyone looking at their bottom two cards for this many ms
    */
-  constructor({ players, first = 0, rng = Math.random, now = Date.now, deck = null }) {
+  constructor({
+    players, first = 0, rng = Math.random, now = Date.now, deck = null, preview = 0,
+  }) {
     if (players < MIN_PLAYERS || players > MAX_PLAYERS) throw new Error('Declare is for 3 or 4 players');
     this.n = players;
     this.rng = rng;
@@ -51,14 +59,29 @@ export class Round {
     this.drawn = null;
     this.power = null; // { kind, card, step, pick }
     this.match = null; // { top, tried: number[], by }
+    this.give = null; // { seat, owner, pos }: who owes a card, and where it goes
     this.turns = 0;
     this.result = null;
     this.events.push({ type: 'deal', first });
+    if (preview > 0) {
+      this.phase = 'preview';
+      for (let s = 0; s < players; s++) BOTTOM.forEach((pos) => this.lookAt(s, s, pos, preview));
+      this.events.push({ type: 'preview', ms: preview });
+    }
+  }
+
+  /** End the opening look and hand the first turn over. */
+  startPlay() {
+    if (this.phase !== 'preview') return fail('The round has already started.');
+    this.phase = 'turn';
+    this.events.push({ type: 'start', seat: this.turn });
+    return ok;
   }
 
   // ------------------------------------------------------------ helpers
 
   currentActor() {
+    if (this.phase === 'give') return this.give.seat;
     return this.phase === 'turn' || this.phase === 'decide' || this.phase === 'power' ? this.turn : null;
   }
 
@@ -90,11 +113,11 @@ export class Round {
     return this.deck.pop();
   }
 
-  lookAt(seat, owner, pos) {
+  lookAt(seat, owner, pos, ms = null) {
     const card = this.hands[owner][pos];
     this.knows[seat].add(card);
     this.reveals.push({
-      id: this.reveals.length, seat, owner, pos, card, at: this.now(),
+      id: this.reveals.length, seat, owner, pos, card, at: this.now(), ...(ms ? { ms } : {}),
     });
   }
 
@@ -220,7 +243,7 @@ export class Round {
         if (a.t !== 'swap' || !own(a.pos) || !other(a.owner, a.opos)) return fail('Pick one of your cards and one of another player’s.');
         this.swapSlots(seat, a.pos, a.owner, a.opos);
         this.events.push({
-          type: 'trade', seat, pos: a.pos, owner: a.owner, opos: a.opos, power: 'blindSwap',
+          type: 'trade', seat, from: seat, pos: a.pos, owner: a.owner, opos: a.opos, power: 'blindSwap',
         });
         this.endTurn();
         return ok;
@@ -240,7 +263,7 @@ export class Round {
         if (a.t !== 'swap' || !own(a.pos) || !other(a.owner, a.opos)) return fail('Pick one of your cards and one of another player’s, or skip the swap.');
         this.swapSlots(seat, a.pos, a.owner, a.opos);
         this.events.push({
-          type: 'trade', seat, pos: a.pos, owner: a.owner, opos: a.opos, power: 'queen',
+          type: 'trade', seat, from: seat, pos: a.pos, owner: a.owner, opos: a.opos, power: 'queen',
         });
         this.endTurn();
         return ok;
@@ -257,11 +280,20 @@ export class Round {
           P.pick = { pos: a.pos, owner: a.owner, opos: a.opos };
           return ok;
         }
-        if (a.t !== 'swap') return fail('Swap the two cards, or keep them where they are.');
-        const { pos, owner, opos } = P.pick;
-        this.swapSlots(seat, pos, owner, opos);
+        // Step 2: swap any two cards held by two different players. Without a choice, the pair just seen.
+        if (a.t !== 'swap') return fail('Pick two cards to swap, or keep everything where it is.');
+        let pair = { from: seat, pos: P.pick.pos, owner: P.pick.owner, opos: P.pick.opos };
+        if (Number.isInteger(a.owner2) && a.owner2 >= 0) {
+          if (!this.slotOk(a.owner, a.pos) || !this.slotOk(a.owner2, a.pos2) || a.owner === a.owner2) {
+            return fail('Pick two cards held by two different players.');
+          }
+          pair = {
+            from: a.owner, pos: a.pos, owner: a.owner2, opos: a.pos2,
+          };
+        }
+        this.swapSlots(pair.from, pair.pos, pair.owner, pair.opos);
         this.events.push({
-          type: 'trade', seat, pos, owner, opos, power: 'king',
+          type: 'trade', seat, ...pair, power: 'king',
         });
         this.endTurn();
         return ok;
@@ -279,31 +311,40 @@ export class Round {
   }
 
   /**
-   * Match phase: throw one of your own cards onto the pile. Same rank as the top card and it stays there,
-   * which ends the window (only one match per discard). Wrong rank and the card goes back face up for
-   * everyone to see, and you take one penalty card from the deck. Each player gets one try per window.
+   * Match phase: throw a card of the same rank as the top of the pile. It can be one of your own cards or
+   * another player's. A correct match stays on the pile and ends the window (only one match per discard);
+   * if the card was someone else's, you then give that player one of your own cards in its place.
+   * Wrong rank and the card goes back face up for everyone to see, and the thrower takes one penalty card
+   * from the deck. Each player gets one try per window.
    */
-  matchCard(seat, pos) {
+  matchCard(seat, pos, owner = seat) {
     if (this.phase !== 'match' || !this.match) return fail('There is nothing to match right now.');
     if (!Number.isInteger(seat) || seat < 0 || seat >= this.n) return fail('Unknown seat.');
     if (this.match.tried.includes(seat)) return fail('You have already tried to match this card.');
-    if (!this.slotOk(seat, pos)) return fail('Pick one of your own cards.');
+    if (!Number.isInteger(owner) || owner < 0) owner = seat; // eslint-disable-line no-param-reassign
+    if (!this.slotOk(owner, pos)) return fail('Pick a card on the table.');
     this.match.tried.push(seat);
-    const card = this.hands[seat][pos];
+    const card = this.hands[owner][pos];
     const top = this.match.top;
     this.revealToAll(card);
     if (rankOf(card) === rankOf(top)) {
-      this.hands[seat][pos] = null;
+      this.hands[owner][pos] = null;
       this.discard.push(card);
       this.match.by = seat;
       this.events.push({
-        type: 'match', seat, pos, card, top, ok: true,
+        type: 'match', seat, owner, pos, card, top, ok: true,
       });
-      this.nextTurn();
+      if (owner !== seat && this.filled(seat).length) {
+        this.match = null;
+        this.give = { seat, owner, pos };
+        this.phase = 'give';
+      } else {
+        this.nextTurn();
+      }
       return ok;
     }
     this.events.push({
-      type: 'match', seat, pos, card, top, ok: false,
+      type: 'match', seat, owner, pos, card, top, ok: false,
     });
     const penalty = this.takeFromDeck();
     if (penalty) {
@@ -312,6 +353,20 @@ export class Round {
       if (at < 0) { at = hand.length; hand.push(penalty); } else hand[at] = penalty;
       this.events.push({ type: 'penalty', seat, pos: at });
     }
+    return ok;
+  }
+
+  /** Give phase: after matching another player's card, put one of yours in the gap it left. */
+  giveCard(seat, pos) {
+    const G = this.give;
+    if (this.phase !== 'give' || !G || seat !== G.seat) return fail('You have no card to give.');
+    if (!this.slotOk(seat, pos)) return fail('Pick one of your own cards to give.');
+    this.hands[G.owner][G.pos] = this.hands[seat][pos];
+    this.hands[seat][pos] = null;
+    this.events.push({
+      type: 'give', seat, pos, owner: G.owner, opos: G.pos,
+    });
+    this.nextTurn();
     return ok;
   }
 
@@ -324,6 +379,7 @@ export class Round {
 
   nextTurn() {
     this.match = null;
+    this.give = null;
     if (this.turns >= MAX_TURNS) {
       this.events.push({ type: 'stalled', turns: this.turns });
       this.finish(null);
@@ -359,6 +415,7 @@ export class Round {
     this.drawn = null;
     this.power = null;
     this.match = null;
+    this.give = null;
     this.result = {
       declarer, success, winners, totals, hands: this.hands.map((h) => [...h]),
     };
@@ -398,6 +455,7 @@ export class Round {
       drawn: mine ? this.drawn : null,
       power,
       match: this.match ? { top: this.match.top, tried: [...this.match.tried] } : null,
+      give: this.give ? { ...this.give } : null,
       reveals: this.reveals.filter((r) => r.seat === seat).slice(-6),
       result: this.result,
     };
@@ -421,9 +479,10 @@ export const PENALTY_CHOICES = [0, 10, 20];
  */
 export class Match {
   constructor({
-    players, rounds = 5, penalty = 10, rng = Math.random, now = Date.now,
+    players, rounds = 5, penalty = 10, rng = Math.random, now = Date.now, preview = 0,
   }) {
     this.n = players;
+    this.preview = preview;
     this.rounds = rounds;
     this.penalty = penalty;
     this.rng = rng;
@@ -439,7 +498,7 @@ export class Match {
     if (this.finished) throw new Error('The match is over');
     this.roundNo += 1;
     this.round = new Round({
-      players: this.n, first: (this.roundNo - 1) % this.n, rng: this.rng, now: this.now, deck,
+      players: this.n, first: (this.roundNo - 1) % this.n, rng: this.rng, now: this.now, deck, preview: this.preview,
     });
     return this.round;
   }

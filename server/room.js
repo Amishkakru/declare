@@ -22,7 +22,10 @@ export const REAL_TIMING = {
   botMatchMax: 2600,
   match: 3200,
   reveal: 3000,
-  limits: { turn: 30_000, decide: 30_000, power: 30_000 },
+  preview: 6000,
+  limits: {
+    turn: 30_000, decide: 30_000, power: 30_000, give: 20_000,
+  },
 };
 export const FAST_TIMING = {
   botMin: 5,
@@ -31,7 +34,10 @@ export const FAST_TIMING = {
   botMatchMax: 20,
   match: 60,
   reveal: 200,
-  limits: { turn: 400, decide: 400, power: 400 },
+  preview: 80,
+  limits: {
+    turn: 400, decide: 400, power: 400, give: 400,
+  },
 };
 
 const AWAY_AFTER = 2; // consecutive timeouts before a seat is put on autopilot
@@ -178,7 +184,9 @@ export class Room {
         if (this.stage !== 'lobby') return 'The match has already started.';
         if (!msg.fillBots && this.seats.some((s) => s.kind === 'empty')) return 'Fill every seat, or start with bots in the empty ones.';
         this.seats.forEach((s, i) => { if (s.kind === 'empty') this.seatBot(i); });
-        this.match = new Match({ players: this.seats.length, rounds: this.settings.rounds, penalty: this.settings.penalty });
+        this.match = new Match({
+          players: this.seats.length, rounds: this.settings.rounds, penalty: this.settings.penalty, preview: this.timing.preview,
+        });
         this.beginRound();
         break;
       }
@@ -201,7 +209,7 @@ export class Room {
         me.afk = 0;
         break;
       }
-      case 'declare': case 'draw': case 'swap': case 'discard': case 'power': case 'match': {
+      case 'declare': case 'draw': case 'swap': case 'discard': case 'power': case 'match': case 'give': {
         if (this.stage !== 'round') return 'There is no round in play.';
         if (msg.t !== 'match') me.afk = 0;
         const res = this.apply(seat, this.toAction(msg));
@@ -221,11 +229,12 @@ export class Room {
       case 'draw': return { type: 'draw' };
       case 'swap': return { type: 'swapIn', pos: int(msg.pos) };
       case 'discard': return { type: 'discard' };
-      case 'match': return { type: 'match', pos: int(msg.pos) };
+      case 'match': return { type: 'match', pos: int(msg.pos), owner: int(msg.owner) };
+      case 'give': return { type: 'give', pos: int(msg.pos) };
       case 'power': {
         const t = ['peek', 'swap', 'skip'].includes(msg.a) ? msg.a : '';
         return {
-          type: 'power', t, pos: int(msg.pos), owner: int(msg.owner), opos: int(msg.opos),
+          type: 'power', t, pos: int(msg.pos), owner: int(msg.owner), opos: int(msg.opos), owner2: int(msg.owner2), pos2: int(msg.pos2),
         };
       }
       default: return { type: '' };
@@ -240,6 +249,7 @@ export class Room {
 
   beginRound() {
     this.match.startRound();
+    this.previewAt = Date.now() + this.timing.preview;
     this.stage = 'round';
     this.log = [];
     this.cursor = 0;
@@ -304,6 +314,7 @@ export class Room {
   /** Clocks are wall-clock deadlines, so give them their full time back after the table was held. */
   rearmClocks() {
     const now = Date.now();
+    if (this.match?.round?.phase === 'preview') this.previewAt = now + this.timing.preview;
     if (this.window) {
       const shift = now + this.window.ms - this.window.at;
       this.window.at += shift;
@@ -329,6 +340,13 @@ export class Room {
     const round = this.match.round;
     const now = Date.now();
 
+    if (round.phase === 'preview') {
+      this.deadline = {
+        seat: null, kind: 'preview', at: this.previewAt, ms: this.timing.preview,
+      };
+      this.after(this.previewAt - now, () => this.endPreview());
+      return;
+    }
     if (round.phase === 'match' && this.window) {
       this.after(this.window.at - now, () => this.closeWindow());
       for (const [s, at] of Object.entries(this.window.bots)) {
@@ -348,6 +366,13 @@ export class Room {
       this.deadline = { seat: actor, at: now + ms, ms };
       this.after(ms, () => this.autopilot(actor, true));
     }
+  }
+
+  endPreview() {
+    if (this.stage !== 'round') return;
+    const round = this.match.round;
+    if (round.phase === 'preview' && round.startPlay().ok) this.afterEngine();
+    else this.afterChange();
   }
 
   closeWindow() {
@@ -390,6 +415,7 @@ export class Room {
 
   /** Last-resort legal move so a bug in a bot can never stall a table. */
   safeMove(round) {
+    if (round.phase === 'give') return { type: 'give', pos: round.filled(round.give.seat)[0] };
     if (round.phase === 'turn') return { type: 'draw' };
     if (round.phase === 'decide') return { type: 'discard' };
     return { type: 'power', t: 'skip' };
@@ -424,7 +450,7 @@ export class Room {
     if (this.match?.round && this.stage !== 'lobby') {
       const v = this.match.round.view(i);
       // A private look is face up for a few seconds, then it exists only in the player's memory.
-      v.reveals = v.reveals.filter((r) => now - r.at < this.timing.reveal);
+      v.reveals = v.reveals.filter((r) => now - r.at < (r.ms ?? this.timing.reveal));
       snap.game = {
         ...v,
         deadline: this.deadline,

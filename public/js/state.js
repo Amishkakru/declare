@@ -11,6 +11,7 @@ export const store = {
   ui: {
     own: null, // picked slot of mine, for a swap or a power
     other: null, // { owner, pos } picked slot of another player
+    picks: [], // king's free swap: up to two { owner, pos } from different players
     pickKey: '', // the turn and step the picks belong to; a new step clears them
     declareArmed: 0, // until when the Declare button is waiting for its second press
     ledgerOpen: false,

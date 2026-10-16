@@ -34,15 +34,21 @@ function describe(e) {
     case 'peek': return { html: `${who(e.seat)} looked at ${whose(e.seat, e.owner)} card ${e.pos + 1}` };
     case 'kingPeek': return { html: `${who(e.seat)} looked at ${whose(e.seat, e.seat)} card ${e.pos + 1} and ${whose(e.seat, e.owner)} card ${e.opos + 1}` };
     case 'trade': return {
-      html: `${who(e.seat)} swapped ${whose(e.seat, e.seat)} card ${e.pos + 1} with ${whose(e.seat, e.owner)} card ${e.opos + 1}${e.power === 'king' ? '' : ', unseen'}`,
+      html: `${who(e.seat)} swapped ${whose(e.seat, e.from ?? e.seat)} card ${e.pos + 1} with ${whose(e.seat, e.owner)} card ${e.opos + 1}${e.power === 'king' ? '' : ', unseen'}`,
       cls: 'key',
     };
     case 'skip':
       if (e.step === 2) return { html: `${who(e.seat)} kept the cards where they were`, cls: 'quiet' };
       return { html: `${who(e.seat)} did not use the power`, cls: 'quiet' };
-    case 'match': return e.ok
-      ? { html: `${who(e.seat)} matched ${mini(e.top)} with ${mini(e.card)} from card ${e.pos + 1}`, cls: 'key' }
-      : { html: `${who(e.seat)} threw ${mini(e.card)} on ${mini(e.top)}: wrong rank, one penalty card`, cls: 'warn' };
+    case 'match': {
+      const from = `${whose(e.seat, e.owner ?? e.seat)} card ${e.pos + 1}`;
+      return e.ok
+        ? { html: `${who(e.seat)} matched ${mini(e.top)} with ${mini(e.card)} from ${from}`, cls: 'key' }
+        : { html: `${who(e.seat)} threw ${mini(e.card)} from ${from} on ${mini(e.top)}: wrong rank, one penalty card`, cls: 'warn' };
+    }
+    case 'give': return { html: `${who(e.seat)} gave card ${e.pos + 1} to ${who(e.owner)}`, cls: 'key' };
+    case 'preview': return { html: 'Everyone looked at their own bottom two cards', cls: 'note' };
+    case 'start': return { html: `Play starts with ${who(e.seat)}`, cls: 'note' };
     case 'reshuffle': return { html: 'The deck ran out. The discard pile, less its top card, became the new deck', cls: 'note' };
     case 'declare': return { html: `${who(e.seat)} declared`, cls: 'key' };
     case 'stalled': return { html: 'The round reached its turn limit and was revealed', cls: 'note' };

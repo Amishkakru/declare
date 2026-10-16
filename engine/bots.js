@@ -165,11 +165,29 @@ function onMatch(v) {
   if (!v.match || v.match.tried.includes(v.you)) return null;
   const rank = rankOf(v.match.top);
   const hit = slotsOf(v, v.you).find((s) => s.card && rankOf(s.card) === rank && valueOf(s.card) > 0);
-  return hit ? { type: 'match', pos: hit.pos } : null;
+  if (hit) return { type: 'match', pos: hit.pos };
+  // Another player's known card of that rank: worth throwing when there is a card of ours worth handing over.
+  const mine = worstKnown(v);
+  if (!slotsOf(v, v.you).length || (mine && valueOf(mine.card) < 4)) return null;
+  for (const owner of opponents(v)) {
+    const theirs = slotsOf(v, owner).find((s) => s.card && rankOf(s.card) === rank);
+    if (theirs) return { type: 'match', owner, pos: theirs.pos };
+  }
+  return null;
+}
+
+/** After matching another player's card: hand over our worst known card, or an unknown one. */
+function onGive(v) {
+  const mine = slotsOf(v, v.you);
+  const hi = worstKnown(v);
+  if (hi && valueOf(hi.card) >= MEAN_VALUE) return { type: 'give', pos: hi.pos };
+  const unknown = mine.find((s) => !s.card);
+  return { type: 'give', pos: (unknown ?? hi ?? mine[0]).pos };
 }
 
 export function decide(v) {
   if (v.phase === 'match') return onMatch(v);
+  if (v.phase === 'give') return v.give?.seat === v.you ? onGive(v) : null;
   if (v.turn !== v.you) return null;
   if (v.phase === 'turn') return onTurn(v);
   if (v.phase === 'decide') return onDecide(v);
@@ -185,7 +203,8 @@ export function applyAction(round, seat, a) {
     case 'swapIn': return round.swapIn(seat, a.pos);
     case 'discard': return round.discardDrawn(seat);
     case 'power': return round.usePower(seat, a);
-    case 'match': return round.matchCard(seat, a.pos);
+    case 'match': return round.matchCard(seat, a.pos, a.owner ?? seat);
+    case 'give': return round.giveCard(seat, a.pos);
     default: return { ok: false, error: 'Unknown action.' };
   }
 }
